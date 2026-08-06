@@ -1,35 +1,38 @@
 function Navbar() {
   return (
-    <nav className="w-full border-b border-slate-800 bg-slate-950/80 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+
         {/* Logo */}
-        <div>
-          <h1 className="text-2xl font-bold text-white">
-            Code<span className="text-blue-500">Scope</span> AI
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-white">
+            Code<span className="text-blue-500">Scope</span>
+            <span className="text-slate-400"> AI</span>
           </h1>
         </div>
 
         {/* Navigation */}
-        <div className="hidden gap-8 text-sm text-slate-300 md:flex">
-          <a href="#" className="transition hover:text-white">
+        <nav className="hidden items-center gap-8 md:flex">
+          <a href="#" className="text-slate-400 transition hover:text-white">
             Features
           </a>
 
-          <a href="#" className="transition hover:text-white">
+          <a href="#" className="text-slate-400 transition hover:text-white">
             Docs
           </a>
 
-          <a href="#" className="transition hover:text-white">
+          <a href="#" className="text-slate-400 transition hover:text-white">
             About
           </a>
-        </div>
+        </nav>
 
-        {/* GitHub Button */}
-        <button className="rounded-xl bg-blue-600 px-5 py-2 font-medium text-white transition hover:bg-blue-700">
-          GitHub
+        {/* CTA */}
+        <button className="rounded-xl bg-blue-600 px-5 py-2 font-semibold text-white transition hover:bg-blue-500">
+          Analyze Repository →
         </button>
+
       </div>
-    </nav>
+    </header>
   );
 }
 
