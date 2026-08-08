@@ -169,3 +169,77 @@ def get_repository_tree(
         "tree": data.get("tree", []),
         "truncated": data.get("truncated", False),
     }
+
+def get_file_content(
+    owner: str,
+    repository: str,
+    file_path: str,
+    branch: str,
+):
+    """
+    Fetch the content of a single file from a GitHub repository.
+    """
+
+    url = (
+        f"{GITHUB_API_URL}/repos/"
+        f"{owner}/{repository}/contents/{file_path}"
+    )
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+    }
+
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params={"ref": branch},
+        timeout=20,
+    )
+
+    if response.status_code == 404:
+        raise ValueError(
+            f"File not found: {file_path}"
+        )
+
+    if response.status_code == 403:
+        raise ValueError(
+            "GitHub API rate limit exceeded or access was denied."
+        )
+
+    if response.status_code != 200:
+        raise ValueError(
+            f"GitHub API returned status {response.status_code}: "
+            f"{response.text}"
+        )
+
+    data = response.json()
+
+    if data.get("type") != "file":
+        raise ValueError(
+            f"'{file_path}' is not a file."
+        )
+
+    content = data.get("content", "")
+    encoding = data.get("encoding")
+
+    if encoding != "base64":
+        raise ValueError(
+            f"Unsupported file encoding: {encoding}"
+        )
+
+    import base64
+
+    decoded_content = base64.b64decode(
+        content
+    ).decode("utf-8", errors="replace")
+
+    return {
+        "path": data.get("path"),
+        "name": data.get("name"),
+        "size": data.get("size"),
+        "content": decoded_content,
+        "html_url": data.get("html_url"),
+    }

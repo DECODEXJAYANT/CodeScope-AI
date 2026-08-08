@@ -5,6 +5,7 @@ from app.services.github_service import (
     parse_github_url,
     get_repository_metadata,
     get_repository_tree,
+    get_file_content,
 )
 
 
@@ -65,3 +66,35 @@ def analyze_repository(repository_url: str):
             "status": "error",
             "message": str(error),
         }
+
+@app.get("/api/file")
+def get_file(
+    repository_url: str,
+    file_path: str,
+):
+    try:
+        repository = parse_github_url(repository_url)
+
+        metadata = get_repository_metadata(
+            repository["owner"],
+            repository["repository"],
+        )
+
+        file_data = get_file_content(
+            repository["owner"],
+            repository["repository"],
+            file_path,
+            metadata["default_branch"],
+        )
+
+        return {
+            "status": "success",
+            "repository_url": repository_url,
+            "file": file_data,
+        }
+
+    except ValueError as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }    
