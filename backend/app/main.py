@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.services.github_service import (
     parse_github_url,
     get_repository_metadata,
+    get_repository_tree,
 )
 
 
@@ -45,10 +46,18 @@ def analyze_repository(repository_url: str):
             repository["repository"],
         )
 
+        tree = get_repository_tree(
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+        )
+
         return {
             "status": "success",
             "repository_url": repository_url,
             "repository": metadata,
+            "tree": tree["tree"],
+            "tree_truncated": tree["truncated"],
         }
 
     except ValueError as error:

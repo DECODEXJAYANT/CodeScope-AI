@@ -19,7 +19,9 @@ def parse_github_url(repository_url: str):
     repository_url = repository_url.strip().rstrip("/")
 
     if not repository_url.startswith("https://github.com/"):
-        raise ValueError("Please provide a valid GitHub repository URL.")
+        raise ValueError(
+            "Please provide a valid GitHub repository URL."
+        )
 
     parts = repository_url.replace(
         "https://github.com/", ""
@@ -113,4 +115,57 @@ def get_repository_metadata(owner: str, repository: str):
         "size": data.get("size"),
         "open_issues": data.get("open_issues_count"),
         "html_url": data.get("html_url"),
+    }
+
+
+def get_repository_tree(
+    owner: str,
+    repository: str,
+    branch: str,
+):
+    """
+    Fetch the complete file and folder tree
+    of a GitHub repository.
+    """
+
+    url = (
+        f"{GITHUB_API_URL}/repos/"
+        f"{owner}/{repository}/git/trees/{branch}"
+    )
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+    }
+
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params={"recursive": "1"},
+        timeout=20,
+    )
+
+    if response.status_code == 404:
+        raise ValueError(
+            "GitHub repository or branch not found."
+        )
+
+    if response.status_code == 403:
+        raise ValueError(
+            "GitHub API rate limit exceeded or access was denied."
+        )
+
+    if response.status_code != 200:
+        raise ValueError(
+            f"GitHub API returned status {response.status_code}: "
+            f"{response.text}"
+        )
+
+    data = response.json()
+
+    return {
+        "tree": data.get("tree", []),
+        "truncated": data.get("truncated", False),
     }
