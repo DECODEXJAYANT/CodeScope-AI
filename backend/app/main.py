@@ -8,6 +8,8 @@ from app.services.github_service import (
     get_file_content,
 )
 
+from app.services.file_filter_service import filter_repository_tree
+from app.services.repository_service import fetch_selected_files
 
 app = FastAPI(
     title="CodeScope AI API",
@@ -98,3 +100,97 @@ def get_file(
             "status": "error",
             "message": str(error),
         }    
+
+@app.get("/api/files")
+def get_analyzable_files(repository_url: str):
+    try:
+        repository = parse_github_url(repository_url)
+
+        metadata = get_repository_metadata(
+            repository["owner"],
+            repository["repository"],
+        )
+
+        tree_data = get_repository_tree(
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+        )
+
+        selected_files = filter_repository_tree(
+            tree_data["tree"]
+        )
+
+        return {
+            "status": "success",
+            "repository_url": repository_url,
+            "total_files": len(
+                [
+                    item
+                    for item in tree_data["tree"]
+                    if item.get("type") == "blob"
+                ]
+            ),
+            "selected_files": len(selected_files),
+            "files": [
+                {
+                    "path": item.get("path"),
+                    "size": item.get("size"),
+                }
+                for item in selected_files
+            ],
+        }
+
+    except ValueError as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }
+
+@app.get("/api/repository")
+def get_repository_files(repository_url: str):
+    try:
+        repository = parse_github_url(repository_url)
+
+        metadata = get_repository_metadata(
+            repository["owner"],
+            repository["repository"],
+        )
+
+        tree_data = get_repository_tree(
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+        )
+
+        selected_files = filter_repository_tree(
+            tree_data["tree"]
+        )
+
+        files = fetch_selected_files(
+    repository["owner"],
+    repository["repository"],
+    metadata["default_branch"],
+    selected_files,
+)
+
+        return {
+            "status": "success",
+            "repository_url": repository_url,
+            "total_files": len(
+                [
+                    item
+                    for item in tree_data["tree"]
+                    if item.get("type") == "blob"
+                ]
+            ),
+            "selected_files": len(selected_files),
+            "fetched_files": len(files),
+            "files": files,
+        }
+
+    except ValueError as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }   
