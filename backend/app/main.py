@@ -10,6 +10,7 @@ from app.services.github_service import (
 
 from app.services.file_filter_service import filter_repository_tree
 from app.services.repository_service import fetch_selected_files
+from app.services.ai_service import analyze_repository
 
 app = FastAPI(
     title="CodeScope AI API",
@@ -40,7 +41,7 @@ def health_check():
 
 
 @app.post("/api/analyze")
-def analyze_repository(repository_url: str):
+def analyze_repository_endpoint(repository_url: str):
     try:
         repository = parse_github_url(repository_url)
 
@@ -168,11 +169,11 @@ def get_repository_files(repository_url: str):
         )
 
         files = fetch_selected_files(
-    repository["owner"],
-    repository["repository"],
-    metadata["default_branch"],
-    selected_files,
-)
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+            selected_files,
+        )
 
         return {
             "status": "success",
@@ -193,4 +194,51 @@ def get_repository_files(repository_url: str):
         return {
             "status": "error",
             "message": str(error),
-        }   
+        }  
+
+@app.get("/api/ai-analyze")
+def ai_analyze_repository(repository_url: str):
+    try:
+        repository = parse_github_url(repository_url)
+
+        metadata = get_repository_metadata(
+            repository["owner"],
+            repository["repository"],
+        )
+
+        tree_data = get_repository_tree(
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+        )
+
+        selected_files = filter_repository_tree(
+            tree_data["tree"]
+        )
+
+        files = fetch_selected_files(
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+            selected_files,
+        )
+
+        analysis = analyze_repository(files)
+
+        return {
+            "status": "success",
+            "repository_url": repository_url,
+            "analysis": analysis,
+        }
+
+    except ValueError as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": f"AI analysis failed: {str(error)}",
+        } 
