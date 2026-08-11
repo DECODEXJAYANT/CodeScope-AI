@@ -1,3 +1,4 @@
+import json
 import requests
 
 
@@ -5,7 +6,7 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "qwen2.5-coder:1.5b"
 
 
-def analyze_repository(files: list) -> str:
+def analyze_repository(files: list) -> dict:
     """
     Analyze selected repository files using local Ollama.
     """
@@ -13,9 +14,9 @@ def analyze_repository(files: list) -> str:
     code_context = ""
     files_used = 0
 
-    # Keep the request manageable for the local 1.5B model.
-    MAX_FILES = 10
-    MAX_FILE_CHARS = 8000
+    # Keep the input small for the local 1.5B model.
+    MAX_FILES = 4
+    MAX_FILE_CHARS = 3000
 
     for file in files[:MAX_FILES]:
 
@@ -25,7 +26,6 @@ def analyze_repository(files: list) -> str:
         if not path or not content:
             continue
 
-        # Handle accidental nested content objects.
         if isinstance(content, dict):
             content = content.get("content", "")
 
@@ -46,46 +46,63 @@ def analyze_repository(files: list) -> str:
             "No readable repository files were found."
         )
 
+    print("\n========== CODESCOPE AI DEBUG ==========")
+    print("Files received:", len(files))
+    print("Files sent to Ollama:", files_used)
+    print("Context characters:", len(code_context))
+    print("========================================\n")
+
     prompt = f"""
-You are CodeScope AI, a software engineer reviewing a GitHub repository.
+You are CodeScope AI, a software engineer reviewing source code.
 
-Your task is to analyze ONLY the repository files provided below.
+Analyze ONLY the files provided below.
 
-IMPORTANT RULES:
-- Do not invent files, technologies, features, APIs, or functionality.
-- Base every observation on the provided code.
+Rules:
+- Use ONLY evidence from the provided source files.
+- Do not use the repository name or general knowledge as evidence.
+- Do not assume a technology is used unless it appears in the provided files.
+- Do not claim that the entire repository has a feature based on only a few files.
+- Do not say that there are "no issues" unless the provided files clearly support that conclusion.
 - If something cannot be determined from the provided files, say "Not enough information".
-- Mention actual filenames when discussing important components.
-- Distinguish existing functionality from suggested improvements.
-- Do not write a generic explanation of software development.
-- Keep the report concise and useful for a developer or recruiter.
+- Clearly distinguish observed functionality from suggested improvements.
+- Keep the analysis concise.
+- Return ONLY valid JSON.
+- Do not use markdown.
 
-Return the analysis using exactly these sections:
+Return exactly this structure:
 
-## 1. Project Overview
-Briefly explain what the project appears to do.
-
-## 2. Technology Stack
-List the technologies that are actually visible in the provided files.
-
-## 3. Architecture
-Explain how the major parts of the application interact.
-
-## 4. Important Files
-Mention the most important files and explain their roles.
-
-## 5. Code Quality
-Mention good practices and any observable weaknesses.
-
-## 6. Potential Issues
-Mention specific technical issues or risks visible in the provided code.
-
-## 7. Improvement Suggestions
-Give practical improvements based on the observed code.
+{{
+  "project_overview": "Brief description of the project.",
+  "technology_stack": [
+    {{
+      "technology": "Technology name",
+      "evidence": "Evidence from the provided files."
+    }}
+  ],
+  "architecture": [
+    "Architecture observation."
+  ],
+  "important_files": [
+    {{
+      "file": "actual file path",
+      "role": "Role of this file."
+    }}
+  ],
+  "code_quality": [
+    "Specific code quality observation."
+  ],
+  "potential_issues": [
+    "Specific technical issue."
+  ],
+  "improvement_suggestions": [
+    "Practical improvement."
+  ]
+}}
 
 Files analyzed: {files_used}
 
-Repository files:
+SOURCE CODE:
+
 {code_context}
 """
 
@@ -96,8 +113,9 @@ Repository files:
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
                 "stream": False,
+                "format": "json",
                 "options": {
-                    "temperature": 0.2,
+                    "temperature": 0.1,
                     "num_ctx": 4096,
                 },
             },
@@ -114,8 +132,7 @@ Repository files:
 
     except requests.exceptions.Timeout:
         raise ValueError(
-            "Ollama took too long to respond. "
-            "Try analyzing fewer or smaller files."
+            "Ollama took too long to respond."
         )
 
     except requests.exceptions.RequestException as error:
@@ -125,11 +142,71 @@ Repository files:
 
     data = response.json()
 
-    result = data.get("response", "")
+    raw_result = data.get("response", "")
 
-    if not isinstance(result, str) or not result.strip():
+    print("\n========== RAW OLLAMA RESPONSE ==========")
+    print(raw_result)
+    print("=========================================\n")
+
+    if not isinstance(raw_result, str):
+        raise ValueError(
+            "Ollama returned an invalid response."
+        )
+
+    raw_result = raw_result.strip()
+
+    if not raw_result:
         raise ValueError(
             "Ollama returned an empty response."
         )
 
-    return result.strip()
+    try:
+        analysis = json.loads(raw_result)
+
+    except json.JSONDecodeError:
+        raise ValueError(
+            "Ollama returned invalid JSON."
+        )
+
+    if not isinstance(analysis, dict):
+        raise ValueError(
+            "Ollama returned an unexpected response format."
+        )
+
+    # Make sure expected fields exist.
+    analysis.setdefault(
+        "project_overview",
+        "Not enough information"
+    )
+
+    analysis.setdefault(
+        "technology_stack",
+        []
+    )
+
+    analysis.setdefault(
+        "architecture",
+        []
+    )
+
+    analysis.setdefault(
+        "important_files",
+        []
+    )
+
+    analysis.setdefault(
+        "code_quality",
+        []
+    )
+
+    analysis.setdefault(
+        "potential_issues",
+        []
+    )
+
+    analysis.setdefault(
+        "improvement_suggestions",
+        []
+    )
+
+    return analysis

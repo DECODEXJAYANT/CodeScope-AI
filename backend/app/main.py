@@ -12,6 +12,7 @@ from app.services.file_filter_service import filter_repository_tree
 from app.services.repository_service import fetch_selected_files
 from app.services.ai_service import analyze_repository
 
+
 app = FastAPI(
     title="CodeScope AI API",
     description="Backend API for CodeScope AI",
@@ -70,6 +71,7 @@ def analyze_repository_endpoint(repository_url: str):
             "message": str(error),
         }
 
+
 @app.get("/api/file")
 def get_file(
     repository_url: str,
@@ -100,7 +102,8 @@ def get_file(
         return {
             "status": "error",
             "message": str(error),
-        }    
+        }
+
 
 @app.get("/api/files")
 def get_analyzable_files(repository_url: str):
@@ -122,16 +125,18 @@ def get_analyzable_files(repository_url: str):
             tree_data["tree"]
         )
 
+        total_files = len(
+            [
+                item
+                for item in tree_data["tree"]
+                if item.get("type") == "blob"
+            ]
+        )
+
         return {
             "status": "success",
             "repository_url": repository_url,
-            "total_files": len(
-                [
-                    item
-                    for item in tree_data["tree"]
-                    if item.get("type") == "blob"
-                ]
-            ),
+            "total_files": total_files,
             "selected_files": len(selected_files),
             "files": [
                 {
@@ -147,6 +152,7 @@ def get_analyzable_files(repository_url: str):
             "status": "error",
             "message": str(error),
         }
+
 
 @app.get("/api/repository")
 def get_repository_files(repository_url: str):
@@ -175,16 +181,18 @@ def get_repository_files(repository_url: str):
             selected_files,
         )
 
+        total_files = len(
+            [
+                item
+                for item in tree_data["tree"]
+                if item.get("type") == "blob"
+            ]
+        )
+
         return {
             "status": "success",
             "repository_url": repository_url,
-            "total_files": len(
-                [
-                    item
-                    for item in tree_data["tree"]
-                    if item.get("type") == "blob"
-                ]
-            ),
+            "total_files": total_files,
             "selected_files": len(selected_files),
             "fetched_files": len(files),
             "files": files,
@@ -194,7 +202,8 @@ def get_repository_files(repository_url: str):
         return {
             "status": "error",
             "message": str(error),
-        }  
+        }
+
 
 @app.get("/api/ai-analyze")
 def ai_analyze_repository(repository_url: str):
@@ -241,4 +250,4 @@ def ai_analyze_repository(repository_url: str):
         return {
             "status": "error",
             "message": f"AI analysis failed: {str(error)}",
-        } 
+        }
