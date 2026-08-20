@@ -9,6 +9,12 @@ def fetch_selected_files(
 ) -> list:
     """
     Fetch the actual content of selected repository files.
+
+    Returns a list containing:
+    - path
+    - size
+    - content
+    - html_url
     """
 
     files = []
@@ -27,10 +33,27 @@ def fetch_selected_files(
                 branch,
             )
 
+            if not isinstance(file_data, dict):
+                print(
+                    f"Invalid response while fetching {path}"
+                )
+                continue
+
             content = file_data.get("content", "")
 
+            # GitHub service should normally return a string.
+            # Do not convert dictionaries/lists into strings.
             if not isinstance(content, str):
-                content = str(content)
+                print(
+                    f"Skipping {path}: content is not text."
+                )
+                continue
+
+            if not content.strip():
+                print(
+                    f"Skipping {path}: file has no readable content."
+                )
+                continue
 
             files.append(
                 {
@@ -40,11 +63,26 @@ def fetch_selected_files(
                         item.get("size", 0),
                     ),
                     "content": content,
-                    "html_url": file_data.get("html_url"),
+                    "html_url": file_data.get(
+                        "html_url"
+                    ),
                 }
             )
 
         except ValueError as error:
-            print(f"Could not fetch {path}: {error}")
+            print(
+                f"Could not fetch {path}: {error}"
+            )
+
+        except Exception as error:
+            print(
+                f"Unexpected error while fetching "
+                f"{path}: {error}"
+            )
+
+    print(
+        f"Repository files fetched successfully: "
+        f"{len(files)}"
+    )
 
     return files

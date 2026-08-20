@@ -10,8 +10,16 @@ from app.services.github_service import (
 
 from app.services.file_filter_service import filter_repository_tree
 from app.services.repository_service import fetch_selected_files
-from app.services.ai_service import analyze_repository
+from app.services.ai_service import (
+    analyze_repository,
+    explain_file,
+)
+from app.services.dependency_graph_service import build_dependency_graph
 
+
+# ============================================================
+# FASTAPI APPLICATION
+# ============================================================
 
 app = FastAPI(
     title="CodeScope AI API",
@@ -20,7 +28,10 @@ app = FastAPI(
 )
 
 
-# Allow requests from the React frontend
+# ============================================================
+# CORS CONFIGURATION
+# ============================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -33,6 +44,10 @@ app.add_middleware(
 )
 
 
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
 @app.get("/api/health")
 def health_check():
     return {
@@ -40,6 +55,10 @@ def health_check():
         "message": "CodeScope AI API is running",
     }
 
+
+# ============================================================
+# BASIC REPOSITORY ANALYSIS
+# ============================================================
 
 @app.post("/api/analyze")
 def analyze_repository_endpoint(repository_url: str):
@@ -71,6 +90,10 @@ def analyze_repository_endpoint(repository_url: str):
             "message": str(error),
         }
 
+
+# ============================================================
+# GET SINGLE FILE
+# ============================================================
 
 @app.get("/api/file")
 def get_file(
@@ -104,6 +127,10 @@ def get_file(
             "message": str(error),
         }
 
+
+# ============================================================
+# GET ANALYZABLE FILES
+# ============================================================
 
 @app.get("/api/files")
 def get_analyzable_files(repository_url: str):
@@ -153,6 +180,10 @@ def get_analyzable_files(repository_url: str):
             "message": str(error),
         }
 
+
+# ============================================================
+# FETCH SELECTED REPOSITORY FILES
+# ============================================================
 
 @app.get("/api/repository")
 def get_repository_files(repository_url: str):
@@ -205,6 +236,10 @@ def get_repository_files(repository_url: str):
         }
 
 
+# ============================================================
+# AI REPOSITORY ANALYSIS
+# ============================================================
+
 @app.get("/api/ai-analyze")
 def ai_analyze_repository(repository_url: str):
     try:
@@ -250,4 +285,152 @@ def ai_analyze_repository(repository_url: str):
         return {
             "status": "error",
             "message": f"AI analysis failed: {str(error)}",
+        }
+
+# ============================================================
+# EXPLAIN SINGLE FILE
+# ============================================================
+
+@app.get("/api/explain-file")
+def explain_repository_file(
+    repository_url: str,
+    file_path: str,
+):
+    try:
+        repository = parse_github_url(
+            repository_url
+        )
+
+        metadata = get_repository_metadata(
+            repository["owner"],
+            repository["repository"],
+        )
+
+        file_data = get_file_content(
+            repository["owner"],
+            repository["repository"],
+            file_path,
+            metadata["default_branch"],
+        )
+
+        explanation = explain_file(
+            file_path,
+            file_data["content"],
+        )
+
+        return {
+            "status": "success",
+            "repository_url": repository_url,
+            "file": file_data,
+            "explanation": explanation,
+        }
+
+    except ValueError as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": (
+                f"File explanation failed: {str(error)}"
+            ),
+        }
+    
+# ============================================================
+# DEPENDENCY GRAPH
+# ============================================================
+
+@app.get("/api/dependency-graph")
+def dependency_graph(repository_url: str):
+    try:
+        # --------------------------------------------------------
+        # Parse GitHub URL
+        # --------------------------------------------------------
+
+        repository = parse_github_url(repository_url)
+
+        # --------------------------------------------------------
+        # Get repository metadata
+        # --------------------------------------------------------
+
+        metadata = get_repository_metadata(
+            repository["owner"],
+            repository["repository"],
+        )
+
+        # --------------------------------------------------------
+        # Get repository tree
+        # --------------------------------------------------------
+
+        tree_data = get_repository_tree(
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+        )
+
+        # --------------------------------------------------------
+        # Filter repository files
+        # --------------------------------------------------------
+
+        selected_files = filter_repository_tree(
+            tree_data["tree"]
+        )
+
+        # --------------------------------------------------------
+        # Fetch selected files
+        # --------------------------------------------------------
+
+        files = fetch_selected_files(
+            repository["owner"],
+            repository["repository"],
+            metadata["default_branch"],
+            selected_files,
+        )
+
+        # --------------------------------------------------------
+        # Build dependency graph
+        # --------------------------------------------------------
+
+        graph = build_dependency_graph(files)
+
+        # --------------------------------------------------------
+        # Count total repository files
+        # --------------------------------------------------------
+
+        total_files = len(
+            [
+                item
+                for item in tree_data["tree"]
+                if item.get("type") == "blob"
+            ]
+        )
+
+        # --------------------------------------------------------
+        # Return dependency graph
+        # --------------------------------------------------------
+
+        return {
+            "status": "success",
+            "repository_url": repository_url,
+            "total_files": total_files,
+            "analyzed_files": len(files),
+            "nodes": graph["nodes"],
+            "edges": graph["edges"],
+        }
+
+    except ValueError as error:
+        return {
+            "status": "error",
+            "message": str(error),
+        }
+
+    except Exception as error:
+        return {
+            "status": "error",
+            "message": (
+                f"Dependency graph generation failed: {str(error)}"
+            ),
         }
