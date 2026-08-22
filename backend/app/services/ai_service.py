@@ -1,4 +1,6 @@
 import json
+import os
+
 import requests
 from typing import Any
 
@@ -9,15 +11,77 @@ from app.services.evidence_service import (
 
 
 # ============================================================
-# OLLAMA CONFIGURATION
+# AI / OLLAMA CONFIGURATION
 # ============================================================
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "qwen2.5-coder:1.5b"
+# Supported providers:
+#
+#   ollama-local  -> local Ollama server on the developer machine
+#   ollama-cloud  -> Ollama Cloud for deployed environments
+#
+# Local development defaults to ollama-local.
+AI_PROVIDER = os.getenv(
+    "AI_PROVIDER",
+    "ollama-local",
+).strip().lower()
 
-# Ollama is now used only for a compact interpretation step.
-OLLAMA_TIMEOUT = 30
-OLLAMA_NUM_CTX = 2048
+OLLAMA_LOCAL_URL = os.getenv(
+    "OLLAMA_LOCAL_URL",
+    "http://localhost:11434/api/generate",
+)
+
+OLLAMA_CLOUD_URL = os.getenv(
+    "OLLAMA_CLOUD_URL",
+    "https://ollama.com/api/generate",
+)
+
+OLLAMA_LOCAL_MODEL = os.getenv(
+    "OLLAMA_LOCAL_MODEL",
+    "qwen2.5-coder:1.5b",
+)
+
+OLLAMA_CLOUD_MODEL = os.getenv(
+    "OLLAMA_CLOUD_MODEL",
+    "gpt-oss:120b",
+)
+
+OLLAMA_API_KEY = os.getenv(
+    "OLLAMA_API_KEY",
+)
+
+OLLAMA_TIMEOUT = int(
+    os.getenv("OLLAMA_TIMEOUT", "30")
+)
+
+OLLAMA_NUM_CTX = int(
+    os.getenv("OLLAMA_NUM_CTX", "4096")
+)
+
+
+def get_ollama_configuration() -> tuple[str, str, dict[str, str]]:
+    """Return the active Ollama URL, model, and headers."""
+
+    if AI_PROVIDER == "ollama-cloud":
+        if not OLLAMA_API_KEY:
+            raise ValueError(
+                "OLLAMA_API_KEY is not configured for Ollama Cloud."
+            )
+
+        return (
+            OLLAMA_CLOUD_URL,
+            OLLAMA_CLOUD_MODEL,
+            {
+                "Authorization": (
+                    f"Bearer {OLLAMA_API_KEY}"
+                )
+            },
+        )
+
+    return (
+        OLLAMA_LOCAL_URL,
+        OLLAMA_LOCAL_MODEL,
+        {},
+    )
 
 
 # ============================================================
@@ -1305,10 +1369,15 @@ The JSON must have:
     # ========================================================
 
     try:
+        ollama_url, ollama_model, headers = (
+            get_ollama_configuration()
+        )
+
         response = requests.post(
-            OLLAMA_URL,
+            ollama_url,
+            headers=headers,
             json={
-                "model": OLLAMA_MODEL,
+                "model": ollama_model,
                 "prompt": prompt,
                 "stream": False,
                 "format": OLLAMA_SCHEMA,
@@ -1447,7 +1516,7 @@ FILE_EXPLANATION_SCHEMA = {
             "items": {
                 "type": "string"
             }
-        }
+        },
     },
     "required": [
         "purpose",
@@ -1461,36 +1530,13 @@ FILE_EXPLANATION_SCHEMA = {
 }
 
 
-def explain_file(
+def _build_file_explanation_prompt(
     file_path: str,
-    file_content: str,
-) -> dict:
-    """
-    Explain a single repository file using Qwen.
+    source_code: str,
+) -> str:
+    """Build the shared prompt used by both AI providers."""
 
-    Only the supplied file content is sent to Ollama.
-    """
-
-    if not isinstance(file_path, str) or not file_path.strip():
-        raise ValueError(
-            "File path is required."
-        )
-
-    if not isinstance(file_content, str):
-        raise ValueError(
-            "File content must be text."
-        )
-
-    if not file_content.strip():
-        raise ValueError(
-            "File has no readable content."
-        )
-
-    # Keep file-level prompts bounded.
-    max_chars = 12000
-    source_code = file_content[:max_chars]
-
-    prompt = f"""
+    return f"""
 You are CodeScope AI.
 
 Explain the following repository file to a software developer.
@@ -1528,62 +1574,126 @@ The JSON must contain exactly:
 - dependencies
 """
 
-    try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "format": FILE_EXPLANATION_SCHEMA,
-                "options": {
-                    "temperature": 0,
-                    "num_ctx": 4096,
-                },
+
+def _explain_file_with_ollama(
+    prompt: str,
+) -> dict:
+    """Explain a file using the local Ollama/Qwen service."""
+
+    ollama_url, ollama_model, headers = (
+        get_ollama_configuration()
+    )
+
+    response = requests.post(
+        ollama_url,
+        headers=headers,
+        json={
+            "model": ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "format": FILE_EXPLANATION_SCHEMA,
+            "options": {
+                "temperature": 0,
+                "num_ctx": OLLAMA_NUM_CTX,
             },
-            timeout=30,
+        },
+        timeout=OLLAMA_TIMEOUT,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    raw_result = data.get(
+        "response",
+        "",
+    )
+
+    if not isinstance(raw_result, str):
+        raise ValueError(
+            "Ollama returned an invalid response."
         )
 
-        response.raise_for_status()
+    raw_result = raw_result.strip()
 
-        data = response.json()
-
-        raw_result = data.get(
-            "response",
-            "",
+    if not raw_result:
+        raise ValueError(
+            "Ollama returned an empty response."
         )
 
-        if not isinstance(raw_result, str):
-            raise ValueError(
-                "Ollama returned an invalid response."
-            )
+    result = json.loads(raw_result)
 
-        raw_result = raw_result.strip()
+    if not isinstance(result, dict):
+        raise ValueError(
+            "Ollama returned an invalid JSON object."
+        )
 
-        if not raw_result:
-            raise ValueError(
-                "Ollama returned an empty response."
-            )
+    return result
 
-        result = json.loads(raw_result)
 
-        if not isinstance(result, dict):
-            raise ValueError(
-                "Ollama returned an invalid JSON object."
-            )
+def explain_file(
+    file_path: str,
+    file_content: str,
+) -> dict:
+    """
+    Explain a single repository file using Ollama.
 
-        return result
+    Provider behavior:
+
+    - AI_PROVIDER=ollama-local -> local Ollama/Qwen.
+    - AI_PROVIDER=ollama-cloud -> Ollama Cloud.
+
+    The deterministic repository analysis remains independent
+    of this function.
+    """
+
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError(
+            "File path is required."
+        )
+
+    if not isinstance(file_content, str):
+        raise ValueError(
+            "File content must be text."
+        )
+
+    if not file_content.strip():
+        raise ValueError(
+            "File has no readable content."
+        )
+
+    max_chars = 12000
+    source_code = file_content[:max_chars]
+
+    prompt = _build_file_explanation_prompt(
+        file_path,
+        source_code,
+    )
+
+    try:
+        return _explain_file_with_ollama(prompt)
 
     except requests.exceptions.Timeout:
         raise ValueError(
-            "File explanation timed out. "
+            "AI file explanation timed out. "
             "Please try again."
         )
 
     except requests.exceptions.ConnectionError:
+        if AI_PROVIDER == "ollama-cloud":
+            raise ValueError(
+                "Ollama Cloud is currently unavailable. "
+                "Please try again."
+            )
+
         raise ValueError(
-            "Ollama is unavailable. "
+            "Local Ollama is unavailable. "
             "Please make sure Ollama is running."
+        )
+
+    except requests.exceptions.HTTPError as error:
+        raise ValueError(
+            f"Ollama request failed: {error}"
         )
 
     except requests.exceptions.RequestException as error:
@@ -1596,6 +1706,13 @@ The JSON must contain exactly:
             "Ollama returned invalid JSON."
         )
 
+    except ValueError:
+        raise
+
+    except Exception as error:
+        raise ValueError(
+            f"AI file explanation failed: {error}"
+        )
 
 
 # ============================================================
