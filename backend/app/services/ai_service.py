@@ -1578,7 +1578,7 @@ The JSON must contain exactly:
 def _explain_file_with_ollama(
     prompt: str,
 ) -> dict:
-    """Explain a file using the local Ollama/Qwen service."""
+    """Explain a file using Ollama."""
 
     ollama_url, ollama_model, headers = (
         get_ollama_configuration()
@@ -1628,8 +1628,58 @@ def _explain_file_with_ollama(
             "Ollama returned an invalid JSON object."
         )
 
-    return result
+    def normalize_explanation_item(
+        item: Any,
+    ) -> str:
+        """Convert any AI explanation item into safe frontend text."""
 
+        if isinstance(item, str):
+            return item
+
+        if isinstance(item, dict):
+            module = item.get("module")
+            imported = item.get("imported")
+
+            if module is not None:
+                if imported is not None:
+                    return f"{module} → {imported}"
+
+                return str(module)
+
+            name = item.get("name")
+
+            if name is not None:
+                return str(name)
+
+            path = item.get("path")
+
+            if path is not None:
+                return str(path)
+
+            return " • ".join(
+                f"{key}: {value}"
+                for key, value in item.items()
+            )
+
+        return str(item)
+
+    for field in [
+        "imports",
+        "exports",
+        "key_points",
+        "dependencies",
+    ]:
+        value = result.get(field, [])
+
+        if not isinstance(value, list):
+            value = [value]
+
+        result[field] = [
+            normalize_explanation_item(item)
+            for item in value
+        ]
+
+    return result
 
 def explain_file(
     file_path: str,
